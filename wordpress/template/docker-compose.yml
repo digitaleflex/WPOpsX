@@ -1,0 +1,145 @@
+services:
+  mysql_${SITE_NAME}:  
+    image: mariadb:10.11 
+    container_name: mysql_wp_${SITE_NAME}  
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_CHARACTER_SET_SERVER=utf8mb4
+      - MYSQL_COLLATION_SERVER=utf8mb4_unicode_ci
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max-connections=500
+      --max_allowed_packet=64M
+      --innodb_buffer_pool_size=256M
+      --innodb_log_file_size=64M
+      --innodb_flush_log_at_trx_commit=2
+      --innodb_flush_method=O_DIRECT
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - db_data_${SITE_NAME}:/var/lib/mysql
+    networks:
+      - proxy
+      - ${SITE_NAME}_network
+    labels:
+      - "traefik.enable=false"
+
+  redis_${SITE_NAME}:
+    image: redis:7-alpine
+    container_name: redis_${SITE_NAME}
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    volumes:
+      - redis_data_${SITE_NAME}:/data
+    networks:
+      - ${SITE_NAME}_network
+      - proxy
+    labels:
+      - "traefik.enable=false"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  wordpress_${SITE_NAME}:  
+    image: eflexcloud/wordpress-custom
+    container_name: wordpress_${SITE_NAME} 
+    security_opt:
+      - no-new-privileges:true
+    restart: always 
+    environment:
+      WORDPRESS_DB_HOST: ${MYSQL_HOST}
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
+      WORDPRESS_DB_USER: ${MYSQL_USER}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      PHP_MEMORY_LIMIT: 256M
+      PHP_MAX_EXECUTION_TIME: 300
+      PHP_POST_MAX_SIZE: 64M
+      PHP_UPLOAD_MAX_FILESIZE: 64M
+      WORDPRESS_DEBUG: "false"
+      REDIS_HOST: redis_${SITE_NAME}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      APACHE_SERVER_NAME: ${DOMAIN_NAME}
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_HOME', 'https://${DOMAIN_NAME}');
+        define('WP_SITEURL', 'https://${DOMAIN_NAME}');
+        define('WP_REDIS_HOST', 'redis_${SITE_NAME}');
+        define('WP_REDIS_PORT', 6379);
+        define('WP_REDIS_DATABASE', 0);
+        define('WP_REDIS_PASSWORD', '${REDIS_PASSWORD}');
+        define('WP_REDIS_PREFIX', 'wp_');
+        define('WP_REDIS_MAXTTL', 3600);
+        define('WP_REDIS_TIMEOUT', 1);
+        define('WP_REDIS_READ_TIMEOUT', 1);
+        define('WP_CACHE', true);
+        define('WP_DEBUG_LOG', false);
+        define('WP_DEBUG_DISPLAY', false);
+        define('SCRIPT_DEBUG', false);
+        define('SAVEQUERIES', false);
+        define('WP_MEMORY_LIMIT', '256M');
+        define('WP_MAX_MEMORY_LIMIT', '512M');
+        define('WP_AUTO_UPDATE_CORE', true);
+        define('EMPTY_TRASH_DAYS', 7);
+        define('WP_POST_REVISIONS', 5);
+        define('DISALLOW_FILE_EDIT', true);
+        define('WP_PLUGIN_DIR', '/var/www/html/wp-content/plugins');
+        define('WP_CONTENT_DIR', '/var/www/html/wp-content');
+        define('WP_CONTENT_URL', 'https://${DOMAIN_NAME}/wp-content');
+        define('WP_LANG_DIR', '/var/www/html/wp-content/languages');
+        define('WPLANG', '${WP_LANG}');
+        define('WP_LOAD_TEXTDOMAIN_DEBUG', false);
+    volumes:
+      - wordpress_files_${SITE_NAME}:/var/www/html 
+      - wordpress_content_${SITE_NAME}:/var/www/html/wp-content 
+      - wordpress_uploads_${SITE_NAME}:/var/www/html/wp-content/uploads
+      - wordpress_themes_${SITE_NAME}:/var/www/html/wp-content/themes
+      - wordpress_plugins_${SITE_NAME}:/var/www/html/wp-content/plugins
+    user: "www-data:www-data"
+    networks:
+      - proxy
+      - ${SITE_NAME}_network
+    depends_on:
+      mysql_${SITE_NAME}:
+        condition: service_healthy
+      redis_${SITE_NAME}:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wordpress.rule=Host(`${DOMAIN_NAME}`)"
+      - "traefik.http.routers.wordpress.entrypoints=websecure"
+      - "traefik.http.routers.wordpress.tls=true"
+      - "traefik.http.routers.wordpress.tls.certresolver=letsencrypt"
+      - "traefik.http.services.wordpress.loadbalancer.server.port=80"
+      - "traefik.http.routers.wordpress-www.rule=Host(`www.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.wordpress-www.entrypoints=websecure"
+      - "traefik.http.routers.wordpress-www.middlewares=redirect-to-non-www"
+      - "traefik.http.routers.wordpress-www.tls=true"
+      - "traefik.http.routers.wordpress-www.tls.certresolver=letsencrypt"
+      - "traefik.http.middlewares.redirect-to-non-www.redirectregex.regex=^https://www\\.(.*)"
+      - "traefik.http.middlewares.redirect-to-non-www.redirectregex.replacement=https://$${1}"
+      - "traefik.http.middlewares.redirect-to-non-www.redirectregex.permanent=true"
+
+
+networks:
+  proxy:  
+    external: true 
+  ${SITE_NAME}_network:
+    driver: bridge  
+
+volumes:
+  wordpress_files_${SITE_NAME}: {} 
+  wordpress_content_${SITE_NAME}: {} 
+  wordpress_uploads_${SITE_NAME}: {}
+  wordpress_themes_${SITE_NAME}: {}
+  wordpress_plugins_${SITE_NAME}: {}
+  db_data_${SITE_NAME}: {}
+  redis_data_${SITE_NAME}: {} 

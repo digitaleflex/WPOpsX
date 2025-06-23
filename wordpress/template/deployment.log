@@ -1,0 +1,15 @@
+=== Déploiement démarré le Thu Jun 12 23:29:41 UTC 2025 ===
+Type d'application: wordpress
+Nom du site: dankoli
+Domaine: dankolli.com
+=====================================
+[INFO] Vérification de l'installation Docker...
+[SUCCÈS] Docker est installé et en cours d'exécution
+Progression: [==                  ] 10%
+[INFO] Vérification de l'installation docker-compose...
+[SUCCÈS] docker-compose est installé
+Progression: [====                ] 20%
+[INFO] Vérification du domaine dankolli.com...
+[SUCCÈS] Domaine valide
+Progression: [======              ] 30%
+[INFO] Création de la structure du site...

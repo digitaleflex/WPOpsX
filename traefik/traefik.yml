@@ -1,0 +1,90 @@
+# Configuration globale
+# Utilise des variables d'environnement pour la portabilité
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+# Configuration de l'API et du dashboard
+api:
+  dashboard: true
+  insecure: false
+
+# Configuration des entrées
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: "${DOMAIN_NAME}"
+            sans:
+              - "*.${DOMAIN_NAME}"
+  metrics:
+    address: ":8082"
+
+# Configuration des providers
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: proxy
+    watch: true
+
+# Configuration des certificats
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "${TRAEFIK_EMAIL}"
+      storage: "/etc/traefik/acme.json"
+      httpChallenge:
+        entryPoint: web
+
+# Configuration des middlewares
+middlewares:
+  security-headers:
+    headers:
+      redirectScheme:
+        scheme: https
+        permanent: true
+      stsHeader:
+        includeSubDomains: true
+        preload: true
+        maxAgeSeconds: 31536000
+      customFrameOptionsValue: "SAMEORIGIN"
+      contentTypeNosniff: true
+      browserXssFilter: true
+      referrerPolicy: "strict-origin-when-cross-origin"
+      permissionsPolicy: "camera=(), microphone=(), geolocation=(), payment=()"
+      customResponseHeaders:
+        X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
+        X-Content-Type-Options: "nosniff"
+
+  # Middleware pour la redirection www vers non-www
+  redirect-to-non-www:
+    redirectRegex:
+      regex: "^https://www\\.(.*)"
+      replacement: "https://${1}"
+      permanent: true
+
+# Configuration des routers
+http:
+  routers:
+    # Router pour le domaine principal
+    main:
+      rule: "Host(`${DOMAIN_NAME}`)"
+      entryPoints:
+        - websecure
+      service: noop@internal
+      middlewares:
+        - security-headers
+      tls:
+        certResolver: letsencrypt
