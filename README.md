@@ -1,6 +1,6 @@
 # 🛠️ WPOpsX
 
-[![Build Status](https://github.com/${{github.repository}}/actions/workflows/ci.yml/badge.svg)](https://github.com/${{github.repository}}/actions/workflows/ci.yml)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/06b348f6805846d195000f3b468f168c)](https://app.codacy.com/gh/digitaleflex/WPOpsX/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 [![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
 [![Licence MIT](https://img.shields.io/badge/licence-MIT-green)](./LICENSE)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen)](../../)
