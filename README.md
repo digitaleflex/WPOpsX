@@ -15,7 +15,7 @@ Elle permet de gérer de façon centralisée plusieurs sites web avec :
 * Backups et mises à jour automatisées
 * Interface de gestion sécurisée
 
----
+
 
 ## 🚀 Fonctionnalités principales
 
@@ -30,7 +30,7 @@ Elle permet de gérer de façon centralisée plusieurs sites web avec :
 * 🔧 **Scripts d'administration** pour automatiser la maintenance
 * 🖥️ **Portainer intégré** : interface web moderne pour gérer vos conteneurs, stacks, volumes et réseaux Docker en toute sécurité
 
----
+
 
 ## 🧱 Architecture du projet
 
@@ -61,7 +61,7 @@ wp-onecommande/
 
 *Schéma global : reverse proxy, monitoring, UI Docker, et sites WordPress/Laravel interconnectés via Traefik et réseaux Docker.*
 
----
+
 
 ## ⚡ Guide d'utilisation rapide
 
@@ -71,7 +71,7 @@ wp-onecommande/
 * Accès root ou sudo
 * DNS configuré pour les domaines à utiliser
 
----
+
 
 ### 2. 🚀 Déployer un site WordPress
 
@@ -82,7 +82,7 @@ cd wordpress/template
 
 📘 Voir `wordpress/template/README.md` pour les options avancées (mots de passe, volumes, environnement Laravel, etc.)
 
----
+
 
 ### 3. 🔄 Mettre à jour les domaines dans Traefik
 
@@ -93,7 +93,7 @@ cd traefik
 
 > 🔐 Les certificats SSL seront automatiquement générés et attachés.
 
----
+
 
 ### 4. 📊 Accéder aux outils de monitoring
 
@@ -102,7 +102,7 @@ cd traefik
 * **cAdvisor** : [https://cadvisor.votre-domaine.com](https://cadvisor.votre-domaine.com)
 * **Traefik Dashboard** : [https://traefik.votre-domaine.com](https://traefik.votre-domaine.com) *(auth sécurisé)*
 
----
+
 
 ### 5. 🖥️ Déployer Portainer (UI Docker)
 
@@ -115,7 +115,7 @@ docker-compose up -d
 - Sécurisé automatiquement par Traefik (SSL, accès via sous-domaine)
 - Permet la gestion graphique de tous vos conteneurs, stacks, volumes, réseaux, utilisateurs, etc.
 
----
+
 
 ### 6. ⚙️ Variables d'environnement & configuration
 
@@ -132,7 +132,7 @@ cp <module>/.env.example <module>/.env
 
 > 🔑 **Pensez à bien configurer vos accès et mots de passe pour la sécurité de votre infrastructure.**
 
----
+
 
 ## 🧩 Fonctionnalités à venir
 
@@ -142,27 +142,27 @@ cp <module>/.env.example <module>/.env
 * Module Laravel full auto
 * Alerting Telegram / Email
 
----
+
 
 ## 🤝 Contribuer
 
 Les contributions sont les bienvenues !
 Tu peux soumettre une PR, ouvrir une issue ou discuter dans les tickets.
 
----
+
 
 ## 📄 Licence
 
 Ce projet est sous licence **MIT** — libre d'usage, de modification et de redistribution, même en usage commercial.
 
----
+
 
 ## 👨‍💻 Auteur
 
 **Eurin HASH** – Architecte solutions digitales, passionné de cloud et cybersécurité.
 👉 [eurinhash.com](https://eurinhash.com) | [digitaleflex.com](https://digitaleflex.com)
 
----
+
 
 ## ❓ FAQ / Foire Aux Questions
 
@@ -194,4 +194,3 @@ Ce projet est sous licence **MIT** — libre d'usage, de modification et de redi
 - Déployez un nouveau site avec le script WordPress/Laravel.
 - Exécutez `./update-domains.sh` dans le dossier `traefik` pour mettre à jour la configuration.
 
---- 
