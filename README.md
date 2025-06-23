@@ -1,5 +1,6 @@
 # 🛠️ WPOpsX
 
+[![Build Status](https://github.com/${{github.repository}}/actions/workflows/ci.yml/badge.svg)](https://github.com/${{github.repository}}/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
 [![Licence MIT](https://img.shields.io/badge/licence-MIT-green)](./LICENSE)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen)](../../)
