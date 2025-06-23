@@ -1,5 +1,8 @@
 name: CI - Lint & Analyse
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
