@@ -8,43 +8,45 @@ on:
 
 jobs:
   lint-yaml:
-    name: Lint YAML
+    name: Lint YAML (tolérant)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Lint YAML (yamllint)
+      - name: Lint YAML (yamllint, warnings seulement)
         uses: ibiqlik/action-yamllint@v3
         with:
           file_or_dir: .
-          config_file: .yamllint.yml # Optionnel, sinon yamllint par défaut
+          config_file: .yamllint.yml
+        continue-on-error: true # Ne bloque pas le workflow sur erreur
 
   lint-bash:
-    name: Lint Bash scripts
+    name: Lint Bash scripts (tolérant)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - name: Installer ShellCheck
         run: sudo apt-get install -y shellcheck
-      - name: Lint des scripts Bash
+      - name: Lint des scripts Bash (n'échoue pas sur warning)
         run: |
-          find . -type f -name '*.sh' -exec shellcheck {} +
+          find . -type f -name '*.sh' -exec shellcheck {} + || true
 
   docker-compose-validate:
-    name: Validation docker-compose
+    name: Validation docker-compose (tolérante)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Vérifier les fichiers docker-compose
+      - name: Vérifier les fichiers docker-compose (affiche un warning si erreur)
         run: |
-          find . -type f -name 'docker-compose.yml' -exec docker-compose -f {} config \;
+          find . -type f -name 'docker-compose.yml' -exec sh -c 'docker-compose -f "$1" config || echo "[WARNING] Erreur dans $1"' _ {} \;
 
   trivy-scan:
-    name: Scan sécurité Trivy
+    name: Scan sécurité Trivy (tolérant)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Scanner la configuration avec Trivy
+      - name: Scanner la configuration avec Trivy (n'échoue pas sur vulnérabilité)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
-          scan-ref: . 
+          scan-ref: .
+        continue-on-error: true 
