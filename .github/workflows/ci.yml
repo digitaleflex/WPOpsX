@@ -40,13 +40,13 @@ jobs:
           find . -type f -name 'docker-compose.yml' -exec sh -c 'docker-compose -f "$1" config || echo "[WARNING] Erreur dans $1"' _ {} \;
 
   trivy-scan:
-    name: Scan sécurité Trivy (tolérant)
+    name: Scan sécurité Trivy (rigoureux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Scanner la configuration avec Trivy (n'échoue pas sur vulnérabilité)
+      - name: Scanner la configuration avec Trivy (échec si vulnérabilité)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
           scan-ref: .
-        continue-on-error: true 
+        # Ce scan est bloquant : le workflow échoue si des vulnérabilités sont détectées 
