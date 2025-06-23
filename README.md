@@ -1,4 +1,4 @@
-# 🛠️ WP-OneCommande
+# 🛠️ WPOpsX
 
 [![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
 [![Licence MIT](https://img.shields.io/badge/licence-MIT-green)](./LICENSE)
@@ -6,7 +6,7 @@
 
 ## Plateforme de Déploiement Automatisé WordPress & Laravel avec Traefik
 
-**WP-OneCommande** est une solution clé en main pour déployer, sécuriser, superviser et maintenir des sites **WordPress** (et **Laravel**) à l'aide de **Docker** et **Traefik**.
+**WPOpsX** est une solution clé en main pour déployer, sécuriser, superviser et maintenir des sites **WordPress** (et **Laravel**) à l'aide de **Docker** et **Traefik**.
 Elle permet de gérer de façon centralisée plusieurs sites web avec :
 
 * Routage automatique HTTP/HTTPS
@@ -35,7 +35,7 @@ Elle permet de gérer de façon centralisée plusieurs sites web avec :
 ## 🧱 Architecture du projet
 
 ```
-wp-onecommande/
+WPOpsX/
 ├── traefik/                # Configuration et gestion centralisée des domaines
 │   ├── traefik.yml         # Configuration statique
 │   ├── dynamic/            # Règles dynamiques (SSL, headers, auth)
@@ -57,7 +57,7 @@ wp-onecommande/
     └── exporters/
 ```
 
-![Schéma d'architecture de la plateforme WP-OneCommande](architecture.png)
+![Schéma d'architecture de la plateforme WPOpsX](architecture.png)
 
 *Schéma global : reverse proxy, monitoring, UI Docker, et sites WordPress/Laravel interconnectés via Traefik et réseaux Docker.*
 
