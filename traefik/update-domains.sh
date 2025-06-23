@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Chemin vers le dossier WordPress
+# Chemin vers le dossier WordPress (à adapter selon votre configuration)
 WORDPRESS_DIR="/home/audest/my_arch/wordpress"
 TRAEFIK_CONFIG="/home/audest/my_arch/traefik/traefik.yml"
 
@@ -10,7 +10,7 @@ extract_domains() {
     find "$WORDPRESS_DIR" -name ".env" -type f | while read -r env_file; do
         # Extraire le domaine du fichier .env
         domain=$(grep "DOMAIN_NAME=" "$env_file" | cut -d'=' -f2)
-        if [ ! -z "$domain" ]; then
+        if [ -n "$domain" ]; then
             # Extraire le domaine principal (sans le sous-domaine)
             main_domain=$(echo "$domain" | sed -E 's/^[^.]+\.(.+)$/\1/')
             echo "$main_domain"
@@ -61,6 +61,12 @@ awk -v domains="$(generate_domains_config)" '
 mv "${TRAEFIK_CONFIG}.new" "$TRAEFIK_CONFIG"
 
 # Redémarrer Traefik
-cd /home/audest/my_arch/traefik && sudo docker-compose down && sudo docker-compose up -d
+cd /home/audest/my_arch/traefik || exit 1
+if sudo docker-compose down; then
+    sudo docker-compose up -d
+else
+    echo "Erreur lors du redémarrage de Traefik." >&2
+    exit 1
+fi
 
 echo "Configuration des domaines mise à jour et Traefik redémarré." 
