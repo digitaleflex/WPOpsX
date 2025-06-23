@@ -1,0 +1,22 @@
+# Configuration yamllint pour WP-OneCommande
+
+extends: default
+
+rules:
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+    check-multi-line-strings: false
+  line-length:
+    max: 120
+    level: warning
+  trailing-spaces:
+    level: error
+  new-lines:
+    type: unix
+  document-start:
+    present: false
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no']
+  comments:
+    min-spaces-from-content: 1 
