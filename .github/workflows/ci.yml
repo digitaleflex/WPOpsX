@@ -52,4 +52,19 @@ jobs:
         with:
           scan-type: config
           scan-ref: .
-        # Ce scan est bloquant : le workflow échoue si des vulnérabilités sont détectées 
+        # Ce scan est bloquant : le workflow échoue si des vulnérabilités sont détectées
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Installer Bats
+        run: sudo apt-get install -y bats
+
+      - name: Installer Docker Compose
+        run: sudo apt-get install -y docker-compose
+
+      - name: Lancer les tests
+        run: bats tests/ 

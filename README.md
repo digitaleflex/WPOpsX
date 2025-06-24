@@ -72,7 +72,7 @@ WPOpsX/
 * Accès root ou sudo
 * DNS configuré pour les domaines à utiliser
 
-
+### je suppose que traefik au moins est deja sur le serveur 
 
 ### 2. 🚀 Déployer un site WordPress
 
@@ -194,4 +194,86 @@ Ce projet est sous licence **MIT** — libre d'usage, de modification et de redi
 ### Comment ajouter un nouveau domaine ou site ?
 - Déployez un nouveau site avec le script WordPress/Laravel.
 - Exécutez `./update-domains.sh` dans le dossier `traefik` pour mettre à jour la configuration.
+
+### Sécurité et robustesse de la restauration
+
+Avant toute restauration, le script effectue automatiquement :
+- Vérification des permissions d'écriture sur les dossiers de backup et du site
+- Vérification de l'espace disque disponible (minimum 1 Go requis)
+- Vérification de la présence des variables d'environnement critiques (.env, MySQL)
+- Vérification que les ports Docker nécessaires (8080 pour WordPress, 3306 pour MySQL) ne sont pas déjà utilisés
+- Vérification que le fichier SQL n'est pas vide
+- Vérification de l'intégrité de l'archive de fichiers WordPress
+- Vérification du démarrage effectif de MySQL
+- Vérification de l'accessibilité du site WordPress après restauration
+
+Chaque étape est loggée en temps réel, avec une barre de progression, une estimation du temps restant, et des messages d'erreur explicites en cas de problème.
+
+#### FAQ restauration
+
+**Que faire si la restauration échoue à une étape ?**
+- Consulte le fichier de log `restore_<site>.log` généré dans le dossier courant. Chaque étape y est détaillée avec les erreurs éventuelles.
+- Vérifie les permissions sur les dossiers, l'espace disque, et que les ports nécessaires ne sont pas utilisés.
+- Assure-toi que la sauvegarde n'est pas corrompue ou vide.
+
+**Comment choisir la bonne sauvegarde à restaurer ?**
+- Liste les sauvegardes disponibles dans `../backups/<site>/`.
+- Utilise la date du fichier (ex : `20240610_153000`) pour lancer la restauration.
+
+**Que faire si le site ne répond pas après restauration ?**
+- Attends quelques secondes, puis vérifie avec `curl http://localhost:8080`.
+- Consulte les logs Docker (`docker-compose logs wordpress_<site>`).
+- Vérifie que la base de données est bien restaurée et accessible.
+
+#### Exemple de log de restauration
+
+```
+[INFO] Arrêt des services Docker...
+Progression: [====                ] 20% | Étape 2/7 | Temps écoulé: 3s | Estimé restant: 12s
+[INFO] Vérification de l'intégrité de l'archive WordPress...
+[INFO] Restauration des fichiers WordPress...
+Progression: [========            ] 40% | Étape 4/7 | Temps écoulé: 7s | Estimé restant: 10s
+[INFO] Redémarrage de la base de données...
+[INFO] Restauration de la base de données...
+Progression: [==============      ] 60% | Étape 6/7 | Temps écoulé: 13s | Estimé restant: 5s
+[SUCCÈS] Le site WordPress est de nouveau accessible.
+Progression: [====================] 100% | Étape 7/7 | Temps écoulé: 18s | Estimé restant: 0s
+Restauration terminée pour testsite à partir de la sauvegarde du 20240610_153000 en 18s.
+```
+
+
+
+## 🚦 Tests automatisés
+
+La qualité et la fiabilité de WPOpsX sont assurées par une suite de tests automatisés :
+
+- **Tests unitaires et d'intégration** via [Bats](https://github.com/bats-core/bats-core)
+- **Validation de la configuration Docker Compose**
+- **Vérification de l'accessibilité des services (WordPress, Traefik, Portainer)**
+- **Tests de sauvegarde**
+- **Intégration continue** : chaque push/PR déclenche automatiquement la suite de tests sur GitHub Actions
+
+### Lancer les tests localement
+
+```bash
+sudo apt install bats
+bats tests/
+```
+
+### Structure des tests
+
+- `tests/deploy_lite.bats` : déploiement minimal
+- `tests/check_services.bats` : accessibilité des services
+- `tests/backup_restore.bats` : backup/restauration
+
+### Restauration automatique
+
+- Un script [`wordpress/template/restore.sh`](./wordpress/template/restore.sh) permet de restaurer un site à partir d'une sauvegarde (fichiers + base SQL).
+- Un test bats vérifie la restauration automatique.
+
+### Badge
+
+![Tests](https://github.com/<ton-org>/<ton-repo>/actions/workflows/ci.yml/badge.svg)
+
+Pour plus de détails, voir [`tests/README.md`](./tests/README.md).
 
