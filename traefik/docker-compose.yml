@@ -1,28 +1,69 @@
 services:
   traefik:
+    # Version ÉPINGLÉE : `latest` rend les mises à jour subies et les
+    # régressions impossibles à corréler. Vérifier la version en place avant
+    # de migrer :  docker exec traefik traefik version
     image: traefik:v3.4
     container_name: traefik
     restart: always
     security_opt:
       - no-new-privileges:true
+    # Traefik écoute sur 80/443 (ports privilégiés) : toutes les autres
+    # capacités sont retirées.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
     ports:
       - "80:80"
       - "443:443"
+
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic:/etc/traefik/dynamic:ro
+      # 🔴 NE JAMAIS supprimer ni régénérer ce fichier : il contient tous les
+      # certificats émis + le compte ACME. Sauvegardez-le AVANT toute
+      # modification, il doit exister au premier démarrage et être en 600
+      # (Traefik refuse l'ACME si les permissions sont trop ouvertes :
+      #  "permissions 777 for /etc/traefik/acme.json are too open, please use 600").
       - ./acme.json:/etc/traefik/acme.json
+
     networks:
       - proxy
+
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN_NAME}`)"
-      - "traefik.http.routers.traefik.service=api@internal"
-      - "traefik.http.routers.traefik.entrypoints=websecure"
-      - "traefik.http.routers.traefik.tls=true"
-      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.traefik.middlewares=traefik-auth"
-      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_USER}:${TRAEFIK_DASHBOARD_PASSWORD_HASH}"
+      # Le proxy ne se route pas lui-même : routing désactivé par défaut.
+      - "traefik.enable=false"
+
+      # ---------------------------------------------------------------------
+      # DASHBOARD SÉCURISÉ (OPTIONNEL — décommenter les 5 lignes ci-dessous)
+      # Prérequis dans traefik/.env :
+      #   DOMAIN_NAME=exemple.com
+      #   TRAEFIK_DASHBOARD_USER=admin
+      #   TRAEFIK_DASHBOARD_PASSWORD_HASH=$2y$05$...   (htpasswd -nbB admin mdp)
+      # ---------------------------------------------------------------------
+      # - "traefik.enable=true"
+      # - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN_NAME}`)"
+      # - "traefik.http.routers.traefik.service=api@internal"
+      # - "traefik.http.routers.traefik.entrypoints=websecure"
+      # - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+      # - "traefik.http.routers.traefik.middlewares=traefik-auth,security-headers@file"
+      # - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_USER}:${TRAEFIK_DASHBOARD_PASSWORD_HASH}"
 
 networks:
   proxy:
