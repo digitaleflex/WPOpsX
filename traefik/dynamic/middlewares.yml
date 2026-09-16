@@ -1,0 +1,65 @@
+# =============================================================================
+# Configuration DYNAMIQUE de Traefik — middlewares partagés
+# -----------------------------------------------------------------------------
+# Ce fichier est chargé par le provider `file` (voir `providers.file` dans
+# ../traefik.yml). Il est rechargé À CHAUD (watch: true) : aucune coupure.
+#
+# ⚠️ Dans un fichier DYNAMIQUE, les placeholders ${VAR} ne sont PAS interpolés
+#    par l'environnement. Tout ce qui dépend du .env (ex: le basicauth du
+#    dashboard) reste déclaré dans les labels Docker, où Compose interpole.
+# =============================================================================
+
+http:
+  middlewares:
+    # -------------------------------------------------------------------------
+    # Interfaces d'administration (dashboard Traefik, Portainer, monitoring) :
+    # en-têtes stricts + noindex (ces interfaces ne doivent pas être indexées).
+    # -------------------------------------------------------------------------
+    security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: false # à n'activer qu'après soumission volontaire à hstspreload.org
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        customFrameOptionsValue: "SAMEORIGIN"
+        referrerPolicy: "strict-origin-when-cross-origin"
+        permissionsPolicy: "camera=(), microphone=(), geolocation=(), payment=()"
+        customResponseHeaders:
+          X-Robots-Tag: "none, noarchive, nosnippet, notranslate, noimageindex"
+
+    # -------------------------------------------------------------------------
+    # Sites clients : en-têtes sûrs mais NON destructifs pour le SEO ni pour
+    # les fonctionnalités des plugins (pas de noindex, pas de Permissions-Policy,
+    # pas de includeSubDomains qui casserait un sous-domaine non HTTPS du client).
+    # -------------------------------------------------------------------------
+    site-security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: false
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        customFrameOptionsValue: "SAMEORIGIN"
+        referrerPolicy: "strict-origin-when-cross-origin"
+
+    # -------------------------------------------------------------------------
+    # www.domaine.tld -> domaine.tld
+    # Utilisé par les routers www des sites (voir wordpress/template).
+    # -------------------------------------------------------------------------
+    redirect-to-non-www:
+      redirectRegex:
+        regex: "^https?://www\\.(.+)"
+        replacement: "https://${1}"
+        permanent: true
+
+    # -------------------------------------------------------------------------
+    # Bouclier d'authentification pour les interfaces d'admin.
+    # OPTIONNEL : décommenter et personnaliser le hash, ou préférer un
+    # forward-auth (Authelia/Authentik). Générer un hash avec :
+    #   htpasswd -nbB admin 'motdepasse'   (utiliser des $$ dans le YAML)
+    # -------------------------------------------------------------------------
+    # admin-auth:
+    #   basicAuth:
+    #     users:
+    #       - "admin:$$2y$$05$$remplacer.par.un.hash.bcrypt"
