@@ -1,2 +1,18 @@
-# Auto detect text files and perform LF normalization
+# Normalisation des fins de ligne.
+# Les scripts Bash et les fichiers YAML DOIVENT être en LF : un script édité
+# sous Windows (CRLF) échoue sur Linux avec
+#   bash: ./deploy.sh: /bin/bash^M: bad interpreter
+# Les dépôts Windows sont donc normalisés en LF à l'index ET dans la copie de
+# travail pour ces types de fichiers.
 * text=auto
+
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+.env*   text eol=lf
+
+# Binaires
+*.png binary
+*.jpg binary
