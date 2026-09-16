@@ -3,7 +3,7 @@ services:
     # Version ÉPINGLÉE : `latest` rend les mises à jour subies et les
     # régressions impossibles à corréler. Vérifier la version en place avant
     # de migrer :  docker exec traefik traefik version
-    image: traefik:v3.4
+    image: traefik:v3.7.13
     container_name: traefik
     restart: always
     security_opt:

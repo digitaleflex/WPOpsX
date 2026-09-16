@@ -146,7 +146,7 @@ else
         if docker run -d --name wpopsx-config-check \
                 -v "${tmp}:/etc/traefik" \
                 -v "${tmp}/acme.json:/etc/traefik/acme.json" \
-                traefik:v3.4 >/dev/null 2>&1; then
+                traefik:v3.7.13 >/dev/null 2>&1; then
             sleep 6
             logs="$(docker logs wpopsx-config-check 2>&1 | sed 's/\x1b\[[0-9;]*m//g')"
             if printf '%s' "$logs" | grep -qiE "field not found|cannot unmarshal|configuration error|panic"; then
@@ -157,7 +157,7 @@ else
             fi
             docker rm -f wpopsx-config-check >/dev/null 2>&1 || true
         else
-            skip "impossible de lancer le conteneur de test (image traefik:v3.4 absente ?)"
+            skip "impossible de lancer le conteneur de test (image traefik:v3.7.13 absente ?)"
         fi
         rm -rf "$tmp"
     fi

@@ -102,6 +102,24 @@ htpasswd -nbB admin 'monmotdepasse'
 > début d'une variable et **tronque silencieusement le hash** (`admin:$2y$05` → accès impossible).
 > Vérifié : avec `$$`, le conteneur reçoit bien `admin:$2y$05$xxxx`.
 
+### En-têtes aliasés (Traefik v3.7+)
+
+`entryPoints.<nom>.http.aliasHeadersStrategy: delete` est activé sur `web` et `websecure`. Sans cette
+option, Traefik v3.7 avertit au démarrage :
+
+> the request headers whose name aliases another header name (e.g. X_Auth_User or X.Auth.User for
+> X-Auth-User) are forwarded as is. The backends deriving variable names from the header names (CGI, WSGI,
+> PHP, NGINX, ...) read them as the header they alias, which allows a client to spoof the headers Traefik
+> manages.
+
+Concrètement, un backend PHP lit `X-Auth-User` **et** `X_Auth_User` sous la même clé `HTTP_X_AUTH_USER` :
+sans cette option, un client peut envoyer la variante « underscore » pour usurper un en-tête posé par le
+proxy (authentification en amont, par exemple).
+
+`delete` supprime ces en-têtes en entrée. L'alternative `reject` refuse la requête. Si une application
+dépendait légitimement d'un en-tête de ce type, retirer la ligne. **Option v3.7+** : la retirer sur une
+version antérieure (le champ n'existe pas avant).
+
 ## Certificats SSL
 
 - Émission et renouvellement automatiques via le challenge **HTTP-01** (le port 80 doit être joignable).
@@ -170,8 +188,8 @@ labels restent valides, et leurs certificats déjà présents dans **`traefik/ac
 
 ## Pièges vérifiés
 
-Ces comportements ont été constatés sur Traefik v3.4 (test réel, pas supposition) et expliquent la
-configuration livrée :
+Ces comportements ont été constatés en test réel sur Traefik v3.4.5, puis re-vérifiés sur **v3.7.13**
+(version de production actuelle) : ils expliquent la configuration livrée.
 
 1. **Clés inconnues en configuration statique : aucune erreur.** Une section `http:` ou `middlewares:`
    écrite dans `traefik.yml` est **ignorée silencieusement** — Traefik démarre normalement, sans le moindre

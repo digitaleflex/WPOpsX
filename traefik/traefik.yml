@@ -1,7 +1,7 @@
 # =============================================================================
 # Configuration STATIQUE de Traefik (traefik.yml)
 # -----------------------------------------------------------------------------
-# ⚠️ RÈGLES VÉRIFIÉES SUR TRAEFIK v3.4 — à respecter absolument :
+# ⚠️ RÈGLES VÉRIFIÉES SUR TRAEFIK v3.4.5 PUIS RE-VÉRIFIÉES SUR v3.7.13 :
 #
 # 1. Ce fichier ne contient QUE des clés racine statiques :
 #    global, api, entryPoints, providers, certificatesResolvers, log, accessLog,
@@ -41,6 +41,12 @@ entryPoints:
   web:
     address: ":80"
     http:
+      # Traefik v3.7+ : supprime les en-têtes dont le nom en alias un autre
+      # (X_Auth_User, X.Auth.User pour X-Auth-User). Sans cette option, un client
+      # peut envoyer la variante « underscore » et un backend PHP/CGI la lit sous
+      # le même nom que l'en-tête légitime (HTTP_X_AUTH_USER) : usurpation des
+      # en-têtes gérés par le proxy. Retirer cette ligne sur Traefik < 3.7.
+      aliasHeadersStrategy: delete
       redirections:
         entryPoint:
           to: websecure
@@ -49,6 +55,7 @@ entryPoints:
   websecure:
     address: ":443"
     http:
+      aliasHeadersStrategy: delete
       tls:
         # Certificat par défaut pour tout router de cet entryPoint : chaque
         # domaine routé reçoit automatiquement son certificat Let's Encrypt,
