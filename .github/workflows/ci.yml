@@ -1,7 +1,12 @@
-name: CI - Lint & Analyse
+name: CI — Vérifications
 
-permissions:
-  contents: read
+# La CI précédente ne pouvait RIEN détecter : chaque étape était neutralisée
+# (`continue-on-error: true`, `|| true`, `|| echo "[WARNING]"`) et le dernier job
+# était tronqué en pleine ligne (le commentaire annonçait un scan bloquant, mais
+# `exit-code` n'était jamais défini -> trivy sortait en code 0).
+#
+# Ici : la porte de vérification est le script `scripts/verify.sh`, exactement
+# celui que les contributeurs exécutent en local. Ce qui suit est BLOQUANT.
 
 on:
   push:
@@ -9,47 +14,60 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  lint-yaml:
-    name: Lint YAML (tolérant)
+  verify:
+    name: Gate — YAML, Bash, Compose, config Traefik
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Lint YAML (yamllint, warnings seulement)
-        uses: ibiqlik/action-yamllint@v3
-        with:
-          file_or_dir: .
-          config_file: .yamllint.yml
-        continue-on-error: true # Ne bloque pas le workflow sur erreur
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  lint-bash:
-    name: Lint Bash scripts (tolérant)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Installer ShellCheck
-        run: sudo apt-get install -y shellcheck
-      - name: Lint des scripts Bash (n'échoue pas sur warning)
+      - name: Installation des linters
         run: |
-          find . -type f -name '*.sh' -exec shellcheck {} + || true
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck
+          python3 -m pip install --quiet --disable-pip-version-check yamllint==1.35.1
 
-  docker-compose-validate:
-    name: Validation docker-compose (tolérante)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Vérifier les fichiers docker-compose (affiche un warning si erreur)
+      - name: Versions des outils
         run: |
-          find . -type f -name 'docker-compose.yml' -exec sh -c 'docker-compose -f "$1" config || echo "[WARNING] Erreur dans $1"' _ {} \;
+          yamllint --version
+          shellcheck --version | head -n 3
+          docker compose version
 
-  trivy-scan:
-    name: Scan sécurité Trivy (rigoureux)
+      - name: Porte de vérification
+        run: ./scripts/verify.sh
+
+  trivy:
+    name: Scan sécurité Trivy (informatif, non bloquant)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
-      - uses: actions/checkout@v3
-      - name: Scanner la configuration avec Trivy (échec si vulnérabilité)
-        uses: aquasecurity/trivy-action@master
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Volontairement NON bloquant : le scan doit d'abord être trié (baseline).
+      # Les résultats sont publiés dans l'onglet Security (SARIF) et peuvent
+      # être rendus bloquants en passant `exit-code` à "1" une fois le tri fait.
+      - name: Trivy (configuration IaC)
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: .
-        # Ce scan est bloquant : le workflow échoue si des vulnérabilités sont détectées 
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Publication des résultats (SARIF)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
