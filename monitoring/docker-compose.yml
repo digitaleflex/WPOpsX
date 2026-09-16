@@ -1,83 +1,112 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Porte l'authentification basique partagée par les 3 interfaces ci-dessous.
+  # Elle est déclarée ici (et non dans traefik/dynamic/) car un fichier
+  # dynamique ne peut pas lire les variables d'environnement.
+  # ---------------------------------------------------------------------------
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.4.1
     container_name: prometheus
     restart: always
-    volumes:
-      - ./prometheus:/etc/prometheus
-      - prometheus_data:/prometheus
+    security_opt:
+      - no-new-privileges:true
+    user: "65534:65534" # nobody
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
-    ports:
-      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    # Pas de `ports:` : aucun accès direct ne contourne Traefik (TLS + auth).
     networks:
       - monitoring
+      - proxy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN_NAME}`)"
       - "traefik.http.routers.prometheus.entrypoints=websecure"
-      - "traefik.http.routers.prometheus.tls=true"
       - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
       - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      # Prometheus n'a AUCUNE authentification native : sans ce middleware,
+      # l'inventaire et les métriques de l'infrastructure sont publics.
+      - "traefik.http.routers.prometheus.middlewares=monitoring-auth,security-headers@file"
+      # Déclaration unique du middleware, réutilisée par grafana et jaeger.
+      - "traefik.http.middlewares.monitoring-auth.basicauth.users=${MONITORING_AUTH_USER:?MONITORING_AUTH_USER manquant — voir monitoring/.env.example}:${MONITORING_AUTH_PASSWORD_HASH:?MONITORING_AUTH_PASSWORD_HASH manquant — voir monitoring/.env.example}"
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.6.1
     container_name: grafana
     restart: always
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Aucune valeur par défaut : admin/admin est la porte d'entrée classique
+      # d'une compromission.
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER manquant — voir monitoring/.env.example}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD manquant — voir monitoring/.env.example}
       - GF_USERS_ALLOW_SIGN_UP=false
-    ports:
-      - "3000:3000"
+      - GF_USERS_ALLOW_ORG_CREATE=false
+      - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN_NAME}
     networks:
       - monitoring
+      - proxy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN_NAME}`)"
       - "traefik.http.routers.grafana.entrypoints=websecure"
-      - "traefik.http.routers.grafana.tls=true"
       - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
       - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.http.routers.grafana.middlewares=monitoring-auth,security-headers@file"
 
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image: jaegertracing/all-in-one:1.65.0
     container_name: jaeger
     restart: always
+    security_opt:
+      - no-new-privileges:true
     environment:
       - COLLECTOR_OTLP_ENABLED=true
-    ports:
-      - "5775:5775/udp"
-      - "6831:6831/udp"
-      - "6832:6832/udp"
-      - "5778:5778"
-      - "16686:16686"
-      - "4317:4317"
-      - "4318:4318"
-      - "14250:14250"
-      - "14268:14268"
-      - "14269:14269"
-      - "9411:9411"
+    # Aucun port publié : les services qui envoient des traces passent par le
+    # réseau Docker `monitoring`. Pour accepter des traces depuis l'extérieur,
+    # publier explicitement le port OTLP voulu (ex: "4318:4318").
     networks:
       - monitoring
+      - proxy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.jaeger.rule=Host(`jaeger.${DOMAIN_NAME}`)"
       - "traefik.http.routers.jaeger.entrypoints=websecure"
-      - "traefik.http.routers.jaeger.tls=true"
       - "traefik.http.routers.jaeger.tls.certresolver=letsencrypt"
       - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
+      - "traefik.http.routers.jaeger.middlewares=monitoring-auth,security-headers@file"
 
   node-exporter:
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.9.1
     container_name: node-exporter
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    pid: host
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -85,16 +114,32 @@ services:
     command:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
     networks:
       - monitoring
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     labels:
       - "traefik.enable=false"
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
+    image: gcr.io/cadvisor/cadvisor:v0.52.0
     container_name: cadvisor
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    # `cap_add` + `devices` couvrent les métriques usuelles sans donner tous
+    # les privilèges de l'hôte. Pour des métriques exhaustives (cgroups
+    # complets), remplacer par `privileged: true` en connaissance de cause.
+    cap_add:
+      - SYS_ADMIN
+      - SYS_PTRACE
+    devices:
+      - /dev/kmsg
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -103,6 +148,11 @@ services:
       - /dev/disk/:/dev/disk:ro
     networks:
       - monitoring
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     labels:
       - "traefik.enable=false"
 
@@ -114,4 +164,4 @@ networks:
 
 volumes:
   prometheus_data:
-  grafana_data: 
+  grafana_data:
