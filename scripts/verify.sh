@@ -78,10 +78,28 @@ for f in scripts/*.sh traefik/*.sh wordpress/template/*.sh; do
 done
 $syn_ok && pass "tous les scripts sont syntaxiquement valides"
 
+# --- 4. Bits exécutables -----------------------------------------------------
+# Un script en mode 100644 se lance sans problème sous Windows (où le bit est
+# ignoré) mais échoue sur un serveur Linux : « ./deploy.sh: Permission denied ».
+# Seul le mode enregistré dans Git compte pour les clones.
+section "Bits exécutables des scripts (mode Git 100755)"
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    skip "pas un dépôt Git"
+else
+    not_exec="$(git ls-files -s '*.sh' | awk '$1 != "100755" {print $4}')"
+    if [ -z "$not_exec" ]; then
+        pass "tous les scripts sont exécutables"
+    else
+        fail "scripts non exécutables (./script.sh échouerait sur Linux) :"
+        printf '       %s\n' $not_exec
+        printf '       correction : git update-index --chmod=+x %s\n' $not_exec
+    fi
+fi
+
 if [ "$FAST" = true ]; then
     printf "\n${YELLOW}--fast : étapes Docker ignorées${NC}\n"
 else
-    # --- 4. Docker Compose ----------------------------------------------------
+    # --- 5. Docker Compose ----------------------------------------------------
     section "Configurations Docker Compose (docker compose config -q)"
     if ! docker compose version >/dev/null 2>&1; then
         skip "docker compose indisponible"
@@ -109,7 +127,7 @@ else
         done < <(find . -name 'docker-compose.yml' -not -path './.git/*')
     fi
 
-    # --- 5. Configuration Traefik (chargement réel) ---------------------------
+    # --- 6. Configuration Traefik (chargement réel) ---------------------------
     section "Chargement réel de la configuration Traefik"
     if ! docker compose version >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
         skip "docker indisponible"
