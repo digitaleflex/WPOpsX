@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installation des linters
         run: |
@@ -52,7 +52,7 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Volontairement NON bloquant : le scan doit d'abord être trié (baseline).
       # Les résultats sont publiés dans l'onglet Security (SARIF) et peuvent
