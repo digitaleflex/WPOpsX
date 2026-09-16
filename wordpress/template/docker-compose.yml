@@ -1,145 +1,205 @@
+# =============================================================================
+# Template de site WordPress / Laravel — SOURCE UNIQUE DE VÉRITÉ
+# -----------------------------------------------------------------------------
+# Ce fichier est copié tel quel par deploy.sh dans le dossier du site, à côté
+# de son .env. Compose interpole les valeurs depuis ce .env.
+#
+# ⚠️ Les NOMS de services, volumes et réseaux sont volontairement FIXES :
+#    Compose n'interpole PAS les clés (testé : `mysql_${SITE_NAME}:` est rejeté
+#    avec "services additional properties 'mysql_${SITE_NAME}' not allowed").
+#    L'isolation entre sites est assurée par `name:` ci-dessous, qui préfixe
+#    tous les volumes et conteneurs : <SITE_NAME>_db_data, <SITE_NAME>_wp_data…
+# =============================================================================
+name: ${SITE_NAME}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
-  mysql_${SITE_NAME}:  
-    image: mariadb:10.11 
-    container_name: mysql_wp_${SITE_NAME}  
+  # ---------------------------------------------------------------------------
+  # Base de données — réseau INTERNE uniquement (jamais exposée au proxy).
+  # ---------------------------------------------------------------------------
+  mysql:
+    image: mariadb:${MYSQL_VERSION:-10.11}
+    container_name: mysql_wp_${SITE_NAME}
     restart: always
+    security_opt:
+      - no-new-privileges:true
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - MYSQL_DATABASE=${MYSQL_DATABASE}
-      - MYSQL_USER=${MYSQL_USER}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
-      - MYSQL_CHARACTER_SET_SERVER=utf8mb4
-      - MYSQL_COLLATION_SERVER=utf8mb4_unicode_ci
-    command: >
-      --default-authentication-plugin=mysql_native_password
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
-      --max-connections=500
-      --max_allowed_packet=64M
-      --innodb_buffer_pool_size=256M
-      --innodb_log_file_size=64M
-      --innodb_flush_log_at_trx_commit=2
-      --innodb_flush_method=O_DIRECT
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD manquant dans .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant dans .env}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=200
+      - --max_allowed_packet=64M
+      - --innodb_buffer_pool_size=${INNODB_BUFFER_POOL_SIZE:-256M}
+      - --innodb_flush_log_at_trx_commit=2
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - internal
+    logging: *default-logging
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    volumes:
-      - db_data_${SITE_NAME}:/var/lib/mysql
-    networks:
-      - proxy
-      - ${SITE_NAME}_network
+      retries: 10
+      start_period: 30s
     labels:
       - "traefik.enable=false"
 
-  redis_${SITE_NAME}:
-    image: redis:7-alpine
+  # ---------------------------------------------------------------------------
+  # Cache objet
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:${REDIS_VERSION:-7-alpine}
     container_name: redis_${SITE_NAME}
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD manquant dans .env}", "--appendonly", "yes"]
     volumes:
-      - redis_data_${SITE_NAME}:/data
+      - redis_data:/data
     networks:
-      - ${SITE_NAME}_network
-      - proxy
-    labels:
-      - "traefik.enable=false"
+      - internal
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    labels:
+      - "traefik.enable=false"
 
-  wordpress_${SITE_NAME}:  
-    image: eflexcloud/wordpress-custom
-    container_name: wordpress_${SITE_NAME} 
+  # ---------------------------------------------------------------------------
+  # Initialisation des permissions du volume WordPress.
+  # Sans cette étape, wp-content appartient à root:root et PHP (uid 33) ne peut
+  # écrire ni les uploads ni les plugins. C'est le remplacement correct des
+  # chmod/chown sur des dossiers hôte qui n'étaient jamais montés.
+  # ---------------------------------------------------------------------------
+  wordpress-init:
+    image: ${WORDPRESS_IMAGE:-eflexcloud/wordpress-custom}
+    container_name: wordpress-init_${SITE_NAME}
+    restart: "no"
+    user: "0:0"
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        for d in uploads plugins themes languages upgrade; do
+          mkdir -p "/var/www/html/wp-content/$$d"
+        done
+        chown -R 33:33 /var/www/html/wp-content
+        echo "permissions wp-content initialisees"
+    volumes:
+      - wordpress_data:/var/www/html
+    networks:
+      - internal
+    labels:
+      - "traefik.enable=false"
+
+  # ---------------------------------------------------------------------------
+  # Application
+  # ---------------------------------------------------------------------------
+  wordpress:
+    image: ${WORDPRESS_IMAGE:-eflexcloud/wordpress-custom}
+    container_name: wordpress_${SITE_NAME}
+    restart: always
     security_opt:
       - no-new-privileges:true
-    restart: always 
+    # Pas de `user:` : l'entrypoint de l'image doit démarrer en root pour
+    # préparer wp-config.php, puis Apache sert les requêtes en www-data (33).
     environment:
-      WORDPRESS_DB_HOST: ${MYSQL_HOST}
+      WORDPRESS_DB_HOST: mysql
       WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
       WORDPRESS_DB_USER: ${MYSQL_USER}
       WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
-      PHP_MEMORY_LIMIT: 256M
-      PHP_MAX_EXECUTION_TIME: 300
-      PHP_POST_MAX_SIZE: 64M
-      PHP_UPLOAD_MAX_FILESIZE: 64M
-      WORDPRESS_DEBUG: "false"
-      REDIS_HOST: redis_${SITE_NAME}
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      WORDPRESS_DB_CHARSET: utf8mb4
+      WORDPRESS_DB_COLLATE: utf8mb4_unicode_ci
+      WORDPRESS_TABLE_PREFIX: ${WP_TABLE_PREFIX:-wp_}
       APACHE_SERVER_NAME: ${DOMAIN_NAME}
+      WORDPRESS_DEBUG: ${WP_DEBUG:-false}
+      PHP_MEMORY_LIMIT: ${WP_MEMORY_LIMIT:-256M}
+      PHP_MAX_EXECUTION_TIME: "300"
+      PHP_POST_MAX_SIZE: ${WP_POST_MAX_SIZE:-64M}
+      PHP_UPLOAD_MAX_FILESIZE: ${WP_UPLOAD_MAX_FILESIZE:-64M}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       WORDPRESS_CONFIG_EXTRA: |
         define('WP_HOME', 'https://${DOMAIN_NAME}');
         define('WP_SITEURL', 'https://${DOMAIN_NAME}');
-        define('WP_REDIS_HOST', 'redis_${SITE_NAME}');
+        define('WP_CONTENT_URL', 'https://${DOMAIN_NAME}/wp-content');
+
+        define('WP_REDIS_HOST', 'redis');
         define('WP_REDIS_PORT', 6379);
         define('WP_REDIS_DATABASE', 0);
         define('WP_REDIS_PASSWORD', '${REDIS_PASSWORD}');
-        define('WP_REDIS_PREFIX', 'wp_');
+        define('WP_REDIS_PREFIX', '${SITE_NAME}_');
         define('WP_REDIS_MAXTTL', 3600);
         define('WP_REDIS_TIMEOUT', 1);
         define('WP_REDIS_READ_TIMEOUT', 1);
         define('WP_CACHE', true);
-        define('WP_DEBUG_LOG', false);
+
+        define('WP_MEMORY_LIMIT', '${WP_MEMORY_LIMIT:-256M}');
+        define('WP_MAX_MEMORY_LIMIT', '${WP_MAX_MEMORY_LIMIT:-512M}');
+        define('WP_DEBUG', ${WP_DEBUG:-false});
+        define('WP_DEBUG_LOG', ${WP_DEBUG:-false});
         define('WP_DEBUG_DISPLAY', false);
         define('SCRIPT_DEBUG', false);
         define('SAVEQUERIES', false);
-        define('WP_MEMORY_LIMIT', '256M');
-        define('WP_MAX_MEMORY_LIMIT', '512M');
+
         define('WP_AUTO_UPDATE_CORE', true);
         define('EMPTY_TRASH_DAYS', 7);
         define('WP_POST_REVISIONS', 5);
         define('DISALLOW_FILE_EDIT', true);
-        define('WP_PLUGIN_DIR', '/var/www/html/wp-content/plugins');
-        define('WP_CONTENT_DIR', '/var/www/html/wp-content');
-        define('WP_CONTENT_URL', 'https://${DOMAIN_NAME}/wp-content');
-        define('WP_LANG_DIR', '/var/www/html/wp-content/languages');
-        define('WPLANG', '${WP_LANG}');
         define('WP_LOAD_TEXTDOMAIN_DEBUG', false);
+        define('WPLANG', '${WP_LANG:-fr_FR}');
     volumes:
-      - wordpress_files_${SITE_NAME}:/var/www/html 
-      - wordpress_content_${SITE_NAME}:/var/www/html/wp-content 
-      - wordpress_uploads_${SITE_NAME}:/var/www/html/wp-content/uploads
-      - wordpress_themes_${SITE_NAME}:/var/www/html/wp-content/themes
-      - wordpress_plugins_${SITE_NAME}:/var/www/html/wp-content/plugins
-    user: "www-data:www-data"
+      - wordpress_data:/var/www/html
     networks:
+      - internal
       - proxy
-      - ${SITE_NAME}_network
+    logging: *default-logging
     depends_on:
-      mysql_${SITE_NAME}:
+      mysql:
         condition: service_healthy
-      redis_${SITE_NAME}:
+      redis:
         condition: service_started
+      wordpress-init:
+        condition: service_completed_successfully
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.wordpress.rule=Host(`${DOMAIN_NAME}`)"
-      - "traefik.http.routers.wordpress.entrypoints=websecure"
-      - "traefik.http.routers.wordpress.tls=true"
-      - "traefik.http.routers.wordpress.tls.certresolver=letsencrypt"
-      - "traefik.http.services.wordpress.loadbalancer.server.port=80"
-      - "traefik.http.routers.wordpress-www.rule=Host(`www.${DOMAIN_NAME}`)"
-      - "traefik.http.routers.wordpress-www.entrypoints=websecure"
-      - "traefik.http.routers.wordpress-www.middlewares=redirect-to-non-www"
-      - "traefik.http.routers.wordpress-www.tls=true"
-      - "traefik.http.routers.wordpress-www.tls.certresolver=letsencrypt"
-      - "traefik.http.middlewares.redirect-to-non-www.redirectregex.regex=^https://www\\.(.*)"
-      - "traefik.http.middlewares.redirect-to-non-www.redirectregex.replacement=https://$${1}"
-      - "traefik.http.middlewares.redirect-to-non-www.redirectregex.permanent=true"
+      # Indispensable : le conteneur est sur 2 réseaux, Traefik doit savoir
+      # lequel utiliser pour l'atteindre (sinon erreurs 502 aléatoires).
+      - "traefik.docker.network=proxy"
 
+      # --- Domaine principal -------------------------------------------------
+      - "traefik.http.routers.wp-${SITE_NAME}.rule=Host(`${DOMAIN_NAME}`)"
+      - "traefik.http.routers.wp-${SITE_NAME}.entrypoints=websecure"
+      - "traefik.http.routers.wp-${SITE_NAME}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.wp-${SITE_NAME}.middlewares=site-security-headers@file"
+      - "traefik.http.services.wp-${SITE_NAME}.loadbalancer.server.port=80"
+
+      # --- www -> apex -------------------------------------------------------
+      - "traefik.http.routers.wp-www-${SITE_NAME}.rule=Host(`www.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.wp-www-${SITE_NAME}.entrypoints=websecure"
+      - "traefik.http.routers.wp-www-${SITE_NAME}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.wp-www-${SITE_NAME}.middlewares=redirect-to-non-www@file"
 
 networks:
-  proxy:  
-    external: true 
-  ${SITE_NAME}_network:
-    driver: bridge  
+  proxy:
+    external: true
+  internal:
+    driver: bridge
 
 volumes:
-  wordpress_files_${SITE_NAME}: {} 
-  wordpress_content_${SITE_NAME}: {} 
-  wordpress_uploads_${SITE_NAME}: {}
-  wordpress_themes_${SITE_NAME}: {}
-  wordpress_plugins_${SITE_NAME}: {}
-  db_data_${SITE_NAME}: {}
-  redis_data_${SITE_NAME}: {} 
+  db_data: {}
+  redis_data: {}
+  wordpress_data: {}

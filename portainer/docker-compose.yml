@@ -1,32 +1,41 @@
 services:
   portainer:
-    image: portainer/portainer-ce:latest
+    # Version ÉPINGLÉE (plus de mises à jour subies) : voir .github/dependabot.yml
+    image: portainer/portainer-ce:2.27.0
     container_name: portainer
     restart: always
     security_opt:
       - no-new-privileges:true
-    ports:
-      - "9000:9000" # Portainer UI
+    # ⚠️ Le socket Docker donne un accès root à l'hôte. Le `:ro` n'y change
+    # RIEN : un socket UNIX monté en lecture seule reste pleinement appelable.
+    # Pour réduire la surface, intercaler un socket-proxy (voir README).
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer_data:/data
+    # Pas de `ports:` : Portainer n'est joignable QUE via Traefik (TLS + auth).
+    # Pour un accès local de secours : "127.0.0.1:9000:9000"
     networks:
-      - portainer
-      - proxy # Permet l'intégration avec Traefik ou d'autres services
+      - proxy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN_NAME}`)"
       - "traefik.http.routers.portainer.entrypoints=websecure"
-      - "traefik.http.routers.portainer.tls=true"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      # Sans cette authentification, l'interface d'administration Docker est
+      # exposée à Internet et le premier visiteur peut définir le compte admin.
+      - "traefik.http.routers.portainer.middlewares=portainer-auth,security-headers@file"
+      - "traefik.http.middlewares.portainer-auth.basicauth.users=${PORTAINER_AUTH_USER:?PORTAINER_AUTH_USER manquant — voir portainer/.env.example}:${PORTAINER_AUTH_PASSWORD_HASH:?PORTAINER_AUTH_PASSWORD_HASH manquant — voir portainer/.env.example}"
 
 networks:
-  portainer:
-    driver: bridge
   proxy:
     external: true
 
 volumes:
   portainer_data:
-    driver: local 
+    driver: local

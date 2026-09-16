@@ -19,4 +19,4 @@ rules:
   truthy:
     allowed-values: ['true', 'false', 'yes', 'no']
   comments:
-    min-spaces-from-content: 1 
+    min-spaces-from-content: 1

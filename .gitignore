@@ -1,4 +1,28 @@
+# --- Secrets : ne doivent JAMAIS être versionnés -----------------------------
+# Le .gitignore imbriqué de traefik/ ne couvrait que acme.json : un traefik/.env
+# (hash du dashboard) ou un monitoring/.env (mot de passe Grafana) partaient
+# dans le commit.
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
 
+# Certificats et clés privées
+acme.json
+**/acme.json
 
-#Ignore cursor AI rules
-.cursor\rules\codacy.mdc
+# --- Artefacts d'exécution ----------------------------------------------------
+*.log
+wordpress/*/backups/
+wordpress/*/docker-compose.yml
+
+# --- Règles IA locales --------------------------------------------------------
+.cursor/
+.cursor/rules/codacy.mdc
+
+# --- Divers -------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc

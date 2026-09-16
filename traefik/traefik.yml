@@ -1,15 +1,42 @@
-# Configuration globale
-# Utilise des variables d'environnement pour la portabilité
+# =============================================================================
+# Configuration STATIQUE de Traefik (traefik.yml)
+# -----------------------------------------------------------------------------
+# ⚠️ RÈGLES VÉRIFIÉES SUR TRAEFIK v3.4 — à respecter absolument :
+#
+# 1. Ce fichier ne contient QUE des clés racine statiques :
+#    global, api, entryPoints, providers, certificatesResolvers, log, accessLog,
+#    metrics, ping, serversTransport, experimental.
+#
+# 2. Les middlewares/routers/services (configuration DYNAMIQUE) vont dans
+#    ./dynamic/*.yml (voir providers.file ci-dessous).
+#    Les déclarer ici (clés `http:` ou `middlewares:`) NE PRODUIT AUCUNE ERREUR :
+#    Traefik démarre et les IGNORE SILENCIEUSEMENT. Toute la sécurité reposant
+#    dessus serait inactive sans le moindre avertissement dans les logs.
+#
+# 3. Les placeholders ${VAR} NE SONT PAS interpolés ici : Traefik les conserve
+#    littéralement (vérifié : la config effective contient la chaîne
+#    "${TRAEFIK_EMAIL}" telle quelle). Toute valeur dépendant de
+#    l'environnement doit donc être écrite en dur, ou passée en argument CLI
+#    depuis docker-compose.yml — jamais sous forme de ${VAR} ici.
+# =============================================================================
+
 global:
-  checkNewVersion: true
+  checkNewVersion: false
   sendAnonymousUsage: false
 
-# Configuration de l'API et du dashboard
+log:
+  level: INFO
+
+accessLog:
+  # stdout -> `docker compose logs traefik` (rotation gérée par Docker).
+  format: common
+
 api:
+  # Le dashboard n'est créé que si un router pointe explicitement vers
+  # api@internal. Aucun router n'est livré par défaut : rien n'est exposé.
   dashboard: true
   insecure: false
 
-# Configuration des entrées
 entryPoints:
   web:
     address: ":80"
@@ -23,68 +50,47 @@ entryPoints:
     address: ":443"
     http:
       tls:
+        # Certificat par défaut pour tout router de cet entryPoint : chaque
+        # domaine routé reçoit automatiquement son certificat Let's Encrypt,
+        # sans rien déclarer côté site.
         certResolver: letsencrypt
-        domains:
-          - main: "${DOMAIN_NAME}"
-            sans:
-              - "*.${DOMAIN_NAME}"
   metrics:
+    # Interne : joignable uniquement depuis le réseau Docker `proxy`.
     address: ":8082"
 
-# Configuration des providers
 providers:
   docker:
     endpoint: "unix:///var/run/docker.sock"
     exposedByDefault: false
     network: proxy
     watch: true
+  file:
+    # Middlewares/routers partagés, rechargés à chaud (aucune coupure).
+    directory: "/etc/traefik/dynamic"
+    watch: true
 
-# Configuration des certificats
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "${TRAEFIK_EMAIL}"
+      # ⚠️ À PERSONNALISER — valeur littérale obligatoire (pas de ${VAR}).
+      email: "admin@exemple.com"
       storage: "/etc/traefik/acme.json"
       httpChallenge:
         entryPoint: web
+      # Certificat wildcard (*.exemple.com) : IMPOSSIBLE avec httpChallenge.
+      # Let's Encrypt n'émet un wildcard que via DNS-01. Décommenter et
+      # renseigner le provider DNS à la place de httpChallenge ci-dessus :
+      # dnsChallenge:
+      #   provider: cloudflare
+      #   delayBeforeCheck: 30
 
-# Configuration des middlewares
-middlewares:
-  security-headers:
-    headers:
-      redirectScheme:
-        scheme: https
-        permanent: true
-      stsHeader:
-        includeSubDomains: true
-        preload: true
-        maxAgeSeconds: 31536000
-      customFrameOptionsValue: "SAMEORIGIN"
-      contentTypeNosniff: true
-      browserXssFilter: true
-      referrerPolicy: "strict-origin-when-cross-origin"
-      permissionsPolicy: "camera=(), microphone=(), geolocation=(), payment=()"
-      customResponseHeaders:
-        X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
-        X-Content-Type-Options: "nosniff"
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true
 
-  # Middleware pour la redirection www vers non-www
-  redirect-to-non-www:
-    redirectRegex:
-      regex: "^https://www\\.(.*)"
-      replacement: "https://${1}"
-      permanent: true
-
-# Configuration des routers
-http:
-  routers:
-    # Router pour le domaine principal
-    main:
-      rule: "Host(`${DOMAIN_NAME}`)"
-      entryPoints:
-        - websecure
-      service: noop@internal
-      middlewares:
-        - security-headers
-      tls:
-        certResolver: letsencrypt
+ping:
+  # Utilisé par le healthcheck du conteneur (traefik healthcheck --ping).
+  # Placé sur l'entryPoint interne `metrics` : jamais exposé à l'extérieur.
+  entryPoint: metrics

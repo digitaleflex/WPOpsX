@@ -1,11 +1,46 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options: 
+# Mises à jour automatisées des dépendances.
+# ⚠️ La configuration précédente était invalide (`package-ecosystem: ""`, valeur
+#    vide) : Dependabot la rejetait silencieusement, aucune mise à jour n'était
+#    proposée. Les écosystèmes réellement utilisés ici sont `docker` (les
+#    images épinglées dans les fichiers compose) et `github-actions`.
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  # Images Docker épinglées dans chaque module (traefik, monitoring, portainer).
+  - package-ecosystem: "docker"
+    directory: "/traefik"
     schedule:
       interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(docker)"
+
+  - package-ecosystem: "docker"
+    directory: "/monitoring"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(docker)"
+
+  - package-ecosystem: "docker"
+    directory: "/portainer"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(docker)"
+
+  # Actions GitHub épinglées dans .github/workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"

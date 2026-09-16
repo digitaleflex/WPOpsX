@@ -15,15 +15,32 @@ scrape_configs:
     static_configs:
       - targets: ['cadvisor:8080']
 
-  - job_name: 'wordpress'
+  # Reverse proxy : entryPoint `metrics` de traefik/traefik.yml (:8082).
+  # Les deux conteneurs partagent le réseau Docker `proxy`.
+  - job_name: 'traefik'
     static_configs:
-      - targets: ['wordpress:80']
-    metrics_path: '/metrics'
+      - targets: ['traefik:8082']
 
-  - job_name: 'mysql'
-    static_configs:
-      - targets: ['mysql:9104']
-
-  - job_name: 'redis'
-    static_configs:
-      - targets: ['redis:9121'] 
+# -----------------------------------------------------------------------------
+# Cibles retirées volontairement : 'wordpress', 'mysql' et 'redis'.
+# Elles étaient scrapées sans aucun exporter présent dans la stack, ce qui
+# produisait 3 cibles DOWN en permanence (et de fausses alertes).
+#
+# Pour superviser la base d'un site, ajouter l'exporter correspondant À CÔTÉ du
+# site (donc avec accès à son réseau) et le raccorder au réseau `proxy`, que
+# Prometheus partage déjà. Exemple, dans le docker-compose.yml du site :
+#
+#   mysqld-exporter:
+#     image: prom/mysqld-exporter:v0.15.1
+#     container_name: mysqld-exporter-<site>
+#     environment:
+#       - MYSQLD_EXPORTER_PASSWORD=${MYSQL_PASSWORD}
+#     command:
+#       - '--mysqld.address=mysql:3306'
+#       - '--mysqld.username=${MYSQL_USER}'
+#     networks: [internal, proxy]
+#     labels: ["traefik.enable=false"]
+#
+# puis ajouter ici une cible 'mysqld-exporter-<site>:9104'.
+# Même principe pour redis_exporter (oliver006/redis_exporter, port 9121).
+# -----------------------------------------------------------------------------
