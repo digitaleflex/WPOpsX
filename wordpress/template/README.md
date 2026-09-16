@@ -1,239 +1,176 @@
-# Script de Déploiement WordPress
+# Déploiement d'un site WordPress
 
-[![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
-[![Licence MIT](https://img.shields.io/badge/licence-MIT-green)](./LICENSE)
-[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen)](../../)
-
-## Sommaire
-- [Introduction](#introduction)
-- [Fonctionnalités](#fonctionnalités)
-- [Prérequis](#prérequis)
-- [Utilisation](#utilisation)
-- [Validation des Domaines](#validation-des-domaines)
-- [Structure du Déploiement](#structure-du-déploiement)
-- [Sécurité](#sécurité)
-- [Maintenance](#maintenance)
-- [Dépannage](#dépannage)
-- [Notes Importantes](#notes-importantes)
-- [Contribution](#contribution)
-- [FAQ / Dépannage](#faq--dépannage)
-- [Licence](#licence)
-
-Ce script permet de déployer automatiquement une instance WordPress avec Docker Compose, en utilisant une approche entièrement conteneurisée.
-
-## Fonctionnalités
-
-- Déploiement entièrement conteneurisé avec Docker
-- Gestion automatique des permissions via Docker
-- Configuration automatique de :
-  - WordPress avec PHP optimisé
-  - MariaDB avec paramètres optimisés
-  - Redis pour le cache
-  - Traefik pour le reverse proxy et SSL
-  - Sauvegardes automatiques
-  - Surveillance avec Prometheus et Grafana
-  - Mises à jour automatiques
+`deploy.sh` installe un site complet (MariaDB, Redis, WordPress, TLS, sauvegardes, mises à jour) sur une
+infrastructure WPOpsX déjà initialisée.
 
 ## Prérequis
 
-- Docker
-- Docker Compose
-- Accès root ou sudo
-- Domaine configuré avec DNS (domaine principal ou sous-domaine)
+- Avoir lancé une fois `../../scripts/init.sh` puis démarré `traefik/`
+- Docker avec `docker compose` v2
+- Un domaine dont le DNS pointe vers ce serveur
+- Les ports 80 et 443 ouverts
+
+## Sommaire
+
+- [Utilisation](#utilisation)
+- [Ce que fait le script](#ce-que-fait-le-script)
+- [Structure du déploiement](#structure-du-déploiement)
+- [Exploitation courante](#exploitation-courante)
+- [Restauration](#restauration)
+- [Dépannage](#dépannage)
 
 ## Utilisation
 
 ```bash
-./deploy.sh [options] <site_name> <domain_name>
+./deploy.sh <nom_du_site> <domaine>
 ```
 
-### Options
+| Option | Effet |
+|---|---|
+| `-m, --mysql VERSION` | version de MariaDB (défaut : 10.11) |
+| `-r, --redis VERSION` | version de Redis (défaut : 7-alpine) |
+| `-i, --wp-image IMAGE` | image WordPress (défaut : `eflexcloud/wordpress-custom`) |
+| `--clean` | **supprime les volumes existants** du site (données perdues) |
+| `-y, --yes` | ne pas demander confirmation pour `--clean` |
+| `--no-cron` | ne pas installer les tâches planifiées |
+| `--lite` | accepté pour compatibilité (un site n'installe jamais monitoring/portainer) |
+| `-h, --help` | afficher l'aide |
 
-- `-t, --type TYPE` : Type d'application (wordpress, laravel, etc.)
-- `-m, --mysql VER` : Version de MySQL/MariaDB
-- `-r, --redis VER` : Version de Redis
-- `-w, --wp VER` : Version de WordPress
-- `-i, --wp-image IMG` : Image WordPress à utiliser
-- `-h, --help` : Affiche l'aide
-
-### Exemples
+Exemples :
 
 ```bash
-# Déploiement WordPress sur un domaine principal
-./deploy.sh -t wordpress blog blog.digitaleflex.com
-
-# Déploiement WordPress sur un sous-domaine
-./deploy.sh -t wordpress insight insight.digitaleflex.com
-
-# Déploiement avec versions spécifiques
-./deploy.sh -t wordpress --mysql 10.11 --redis 7-alpine blog blog.digitaleflex.com
-
-# Déploiement avec image personnalisée
-./deploy.sh -t wordpress --wp-image eflexcloud/wordpress-custom blog blog.digitaleflex.com
+./deploy.sh blog blog.exemple.com
+./deploy.sh boutique www.boutique.exemple.com -m 11.4
+./deploy.sh --clean --yes test test.exemple.com     # repartir de zéro
 ```
 
-### Validation des Domaines
+## Ce que fait le script
 
-Le script accepte :
-- Domaines principaux (ex: example.com)
-- Sous-domaines (ex: sub.example.com)
-- Sous-domaines multiples (ex: sub1.sub2.example.com)
+1. Vérifie Docker, le plugin `compose` v2 et le réseau `proxy` (sinon il indique de lancer `init.sh`)
+2. Valide le domaine et l'espace disque
+3. Crée `wordpress/<site>/` et écrit un `.env` contenant des mots de passe aléatoires (`openssl rand -hex 32`),
+   en mode **600**
+4. Copie `docker-compose.yml`, `backup.sh` et `update.sh`, puis valide la configuration (`docker compose config -q`)
+5. Démarre les services et attend que la base soit réellement prête (`healthcheck.sh`)
+6. Contrôle la réponse HTTPS et signale les points à vérifier si elle échoue
+7. Installe deux tâches cron, identifiées par le commentaire `# wpopsx:<site>` :
+   - sauvegarde quotidienne à 02h00
+   - mises à jour WordPress le dimanche à 03h00
 
-Format valide :
-- Caractères alphanumériques
-- Tirets (-)
-- Points (.) pour séparer les parties du domaine
-- Extension de domaine d'au moins 2 caractères
+> Relancer le script sans `--clean` est **sans danger** : les données existantes et les mots de passe sont
+> conservés et seuls les fichiers de configuration sont réécrits.
 
-## Structure du Déploiement
+## Structure du déploiement
 
-Le script crée une structure Docker Compose avec :
+```
+wordpress/<site>/
+├── .env                # secrets du site (mode 600, jamais versionné)
+├── docker-compose.yml  # copie conforme du template
+├── backup.sh           # sauvegarde base + fichiers
+├── update.sh           # mises à jour WordPress
+└── backups/            # sauvegardes horodatées (rotation 7 jours)
+```
 
 ### Services
 
-1. **WordPress**
-   - Image personnalisée avec PHP optimisé
-   - Configuration automatique via variables d'environnement
-   - Gestion des permissions via Docker
-   - Volume Docker pour la persistance des données
+| Service | Rôle | Réseau | Exposition |
+|---|---|---|---|
+| `wordpress` | application (Apache + PHP) | `internal` + `proxy` | `https://<domaine>` via Traefik |
+| `wordpress-init` | initialise les permissions de `wp-content` (uid 33) | `internal` | aucun |
+| `mysql` | MariaDB | `internal` | **aucune** (hors de portée du proxy) |
+| `redis` | cache objet | `internal` | **aucune** |
 
-2. **MariaDB**
-   - Configuration optimisée pour WordPress
-   - Volume Docker pour la persistance des données
-   - Healthcheck intégré
+### Volumes et isolation
 
-3. **Redis**
-   - Cache pour WordPress
-   - Configuration sécurisée
-   - Volume Docker pour la persistance
+Les noms de services sont volontairement fixes : Compose n'interpole pas les **clés** YAML. L'isolation
+entre sites est assurée par le nom de projet (`name: ${SITE_NAME}` en tête du compose), qui préfixe tous
+les volumes et conteneurs :
 
-4. **Traefik**
-   - Reverse proxy automatique
-   - Gestion SSL avec Let's Encrypt
-   - Redirection www vers non-www
-   - Support des sous-domaines
+```
+<site>_wordpress_data   # /var/www/html (cœur, extensions, thèmes, uploads)
+<site>_db_data          # /var/lib/mysql
+<site>_redis_data       # /data
+```
 
-### Volumes
+## Exploitation courante
 
-- `wordpress_data_<site_name>` : Données WordPress
-- `db_data_<site_name>` : Base de données MariaDB
-- `redis_data_<site_name>` : Données Redis
+```bash
+cd wordpress/<site>
 
-### Réseaux
+docker compose ps                      # état des services
+docker compose logs -f wordpress       # journaux de l'application
+docker compose logs mysql              # journaux de la base
+docker compose down                    # arrêter (données conservées)
+docker compose up -d                   # redémarrer
+docker compose pull && docker compose up -d   # mettre à jour les images
 
-- `proxy` : Réseau externe pour Traefik
-- `<site_name>_network` : Réseau interne pour les services
-- `redis_network` : Réseau pour Redis
+./backup.sh                            # sauvegarde manuelle
+./update.sh                            # mises à jour WP / extensions / thèmes / traductions
+```
 
-## Sécurité
+Modifier un mot de passe de base : éditer `.env` puis `docker compose up -d` (les volumes sont conservés ;
+si l'utilisateur MariaDB existe déjà, son mot de passe en base doit être changé en parallèle).
 
-- Permissions gérées par Docker
-- Configuration sécurisée de MariaDB
-- Redis protégé par mot de passe
-- Traefik avec SSL automatique
-- Pas d'accès direct aux fichiers sur l'hôte
+## Restauration
 
-## Maintenance
+```bash
+cd wordpress/<site>
+RESTORE=backups/20260916_020001        # dossier à restaurer
 
-### Sauvegardes
+# 1. Base de données
+gunzip -c "${RESTORE}/db.sql.gz" | docker compose exec -T mysql \
+    sh -c 'exec mysql -u root "$MYSQL_DATABASE"'
 
-Les sauvegardes sont automatiquement configurées :
-- Base de données quotidienne
-- Fichiers WordPress quotidiens
-- Rotation des sauvegardes (7 jours)
+# 2. Fichiers (lecture sur l'entrée standard : aucun chemin de l'hôte n'est monté)
+docker compose exec -T wordpress sh -c 'tar xzf - -C /var/www/html' \
+    < "${RESTORE}/files.tar.gz"
 
-### Mises à jour
+# 3. Redémarrer pour repartir sur un état propre
+docker compose up -d --force-recreate
+```
 
-Les mises à jour sont automatiquement configurées :
-- WordPress core
-- Plugins
-- Thèmes
-- Traductions
-
-### Surveillance
-
-- Prometheus pour la collecte de métriques
-- Grafana pour la visualisation
-- Alertes configurables
+Chaque sauvegarde est vérifiée : la sauvegarde de la base doit se terminer par la ligne `Dump completed`
+de `mysqldump`, et l'archive de fichiers est testée par `tar tzf`. Un dump tronqué est supprimé et le
+script sort en erreur, pour éviter de conserver une sauvegarde inutilisable.
 
 ## Dépannage
 
-### Logs
+### Le script s'arrête : « Docker n'est pas installé »
+Docker doit être installé et le démon démarré (`docker info` doit répondre).
 
+### « le plugin 'docker compose' (v2) est requis »
+Utiliser la commande `docker compose` (avec un espace). `docker-compose` v1 n'est plus maintenu depuis
+2023 et n'est plus installé par défaut sur les distributions récentes.
+
+### « le réseau Docker 'proxy' n'existe pas »
 ```bash
-# Logs WordPress
-docker-compose logs wordpress_<site_name>
-
-# Logs MariaDB
-docker-compose logs mysql_<site_name>
-
-# Logs Redis
-docker-compose logs redis_<site_name>
+cd ../.. && ./scripts/init.sh
 ```
-
-### Commandes Utiles
-
-```bash
-# Redémarrer les services
-docker-compose restart
-
-# Vérifier l'état des services
-docker-compose ps
-
-# Voir les volumes
-docker volume ls
-
-# Nettoyer les volumes non utilisés
-docker volume prune
-```
-
-## Notes Importantes
-
-- Toutes les données sont stockées dans des volumes Docker
-- Les permissions sont gérées par Docker
-- Pas besoin de configuration manuelle des permissions
-- Les sauvegardes sont automatiques
-- Les mises à jour sont automatiques
-- Support complet des sous-domaines
-
-## Contribution
-
-Les contributions sont les bienvenues ! N'hésitez pas à :
-1. Fork le projet
-2. Créer une branche pour votre fonctionnalité
-3. Commiter vos changements
-4. Pousser vers la branche
-5. Ouvrir une Pull Request 
-
-## FAQ / Dépannage
-
-### Le script s'arrête avec une erreur "Docker n'est pas installé"
-- Vérifiez que Docker et Docker Compose sont bien installés et accessibles dans votre terminal.
 
 ### Le domaine est refusé comme invalide
-- Vérifiez le format du domaine (pas d'espaces, caractères spéciaux interdits, extension correcte).
-- Exemple valide : `blog.monsite.com`
+Le format attendu est `domaine.tld` (au moins un point et un TLD de 2 caractères ou plus).
 
-### Les services ne démarrent pas ou restent en "restarting"
-- Vérifiez l'espace disque disponible.
-- Consultez les logs avec `docker-compose logs` pour plus de détails.
+### Le site répond 502
+- Vérifier que le label `traefik.docker.network=proxy` est présent (il l'est par défaut).
+- `docker compose logs wordpress` et `docker logs traefik`.
+
+### Les uploads ou l'installation d'extensions échouent
+Les permissions de `wp-content` doivent appartenir à `www-data` (uid 33) :
+```bash
+docker compose up -d --force-recreate wordpress-init
+docker compose logs wordpress-init
+```
 
 ### Les certificats SSL ne sont pas générés
-- Vérifiez que le port 80 est ouvert et accessible depuis l'extérieur.
-- Vérifiez les logs Traefik pour d'éventuelles erreurs ACME.
+- `traefik/acme.json` doit exister en mode 600 (voir `traefik/README.md`).
+- Le DNS doit pointer vers le serveur et le port 80 être joignable.
 
-### Impossible d'accéder au site après déploiement
-- Attendez quelques minutes (génération des certificats, démarrage des services).
-- Vérifiez que le DNS pointe bien vers votre serveur.
-
-### Les sauvegardes automatiques ne fonctionnent pas
-- Vérifiez les permissions sur le dossier de sauvegarde.
-- Consultez la crontab (`crontab -l`) pour vérifier la présence de la tâche.
-
----
+### Les tâches cron ne s'exécutent pas
+```bash
+crontab -l | grep wpopsx
+cd wordpress/<site> && ./backup.sh          # exécuter à la main pour voir l'erreur
+```
 
 ## Licence
 
-MIT – Utilisation libre, voir le fichier LICENSE pour plus de détails.
-
---- 
+MIT — voir [LICENSE](../../LICENSE).
